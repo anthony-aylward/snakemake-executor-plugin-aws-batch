@@ -41,6 +41,9 @@ class BatchJobBuilder:
         """
         Return docker CMD form of the command
         """
+
+        if self.job.resources.get("aws_batch_unique_workdir", False):
+            return ["/bin/bash", "-c", f"mkdir {self.container_unique_workdir} && cd {self.container_unique_workdir} && " + remote_command]
         return ["/bin/bash", "-c", remote_command]
 
     def _validate_resources(self, vcpu: str, mem: str) -> tuple[str, str]:
