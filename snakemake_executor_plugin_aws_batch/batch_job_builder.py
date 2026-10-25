@@ -1,4 +1,6 @@
 import uuid
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import List
 from snakemake_interface_common.exceptions import WorkflowError
 from snakemake_interface_executor_plugins.jobs import JobExecutorInterface
@@ -30,6 +32,10 @@ class BatchJobBuilder:
         self.job_command = job_command
         self.batch_client = batch_client
         self.created_job_defs = []
+        self.container_path = "/tmp/repo"
+        if self.job.resources.get("aws_batch_unique_workdir", False):
+            with TemporaryDirectory() as temp_dir_name:
+                self.container_unique_workdir = str(Path(self.container_path) / Path(temp_dir_name).name)
 
     def _make_container_command(self, remote_command: str) -> List[str]:
         """
@@ -101,6 +107,35 @@ class BatchJobBuilder:
                     "value": gpu_str,
                 }
             )
+
+        if all((
+            self.job.resources.get("volume"),
+            self.job.resources.get("fs_id"),
+            self.job.resources.get("fsap_id")
+        )):
+            container_properties.update({
+                "mountPoints": [
+                    {
+                        "sourceVolume": self.job.resources.get("volume"),
+                        "containerPath": self.container_path,
+                        "readOnly": False
+                    }
+                ],
+                "volumes": [
+                    {
+                        "name": self.job.resources.get("volume"),
+                        "efsVolumeConfiguration": {
+                            "fileSystemId": self.job.resources.get("fs_id"),
+                            "rootDirectory": "/",
+                            "transitEncryption": "ENABLED",
+                            "authorizationConfig": {
+                                "accessPointId": self.job.resources.get("fsap_id"),
+                                "iam": "ENABLED"
+                            }
+                        }
+                    }
+                ]
+            })
 
         timeout = {"attemptDurationSeconds": self.settings.task_timeout}
         tags = self.settings.tags if isinstance(self.settings.tags, dict) else dict()
